@@ -1384,9 +1384,9 @@ resource "aws_s3_bucket" "test" {
 }
 
 resource "aws_flow_log" "test" {
-  log_destination          = aws_s3_bucket.test.arn
-  log_destination_type     = "s3"
-  traffic_type             = "ALL"
+  log_destination         = aws_s3_bucket.test.arn
+  log_destination_type    = "s3"
+  traffic_type            = "ALL"
   regional_nat_gateway_id = aws_nat_gateway.test.id
 
   tags = {
