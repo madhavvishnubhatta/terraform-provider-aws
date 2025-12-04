@@ -3,13 +3,13 @@ subcategory: "VPC (Virtual Private Cloud)"
 layout: "aws"
 page_title: "AWS: aws_flow_log"
 description: |-
-  Provides a VPC/Subnet/ENI Flow Log
+  Provides a VPC/Subnet/ENI/NAT Gateway Flow Log
 ---
 
 # Resource: aws_flow_log
 
-Provides a VPC/Subnet/ENI/Transit Gateway/Transit Gateway Attachment Flow Log to capture IP traffic for a specific network
-interface, subnet, or VPC. Logs are sent to a CloudWatch Log Group, a S3 Bucket, or Amazon Data Firehose
+Provides a VPC/Subnet/ENI/Transit Gateway/Transit Gateway Attachment/NAT Gateway Flow Log to capture IP traffic for a specific network
+interface, subnet, VPC, or NAT gateway. Logs are sent to a CloudWatch Log Group, a S3 Bucket, or Amazon Data Firehose
 
 ## Example Usage
 
@@ -152,6 +152,30 @@ resource "aws_flow_log" "example" {
 
 resource "aws_s3_bucket" "example" {
   bucket = "example"
+}
+```
+
+### NAT Gateway Flow Logs to S3
+
+```terraform
+resource "aws_flow_log" "example" {
+  log_destination         = aws_s3_bucket.example.arn
+  log_destination_type    = "s3"
+  traffic_type            = "ALL"
+  regional_nat_gateway_id = aws_nat_gateway.example.id
+}
+
+resource "aws_s3_bucket" "example" {
+  bucket = "example"
+}
+
+resource "aws_nat_gateway" "example" {
+  allocation_id = aws_eip.example.id
+  subnet_id     = aws_subnet.example.id
+}
+
+resource "aws_eip" "example" {
+  domain = "vpc"
 }
 ```
 
@@ -322,6 +346,7 @@ This resource supports the following arguments:
 * `iam_role_arn` - (Optional) ARN of the IAM role used to post flow logs. Corresponds to `DeliverLogsPermissionArn` in the [AWS API](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateFlowLogs.html).
 * `log_destination_type` - (Optional) Logging destination type. Valid values: `cloud-watch-logs`, `s3`, `kinesis-data-firehose`. Default: `cloud-watch-logs`.
 * `log_destination` - (Optional) ARN of the logging destination.
+* `regional_nat_gateway_id` - (Optional) Regional NAT Gateway ID to attach to.
 * `subnet_id` - (Optional) Subnet ID to attach to.
 * `transit_gateway_id` - (Optional) Transit Gateway ID to attach to.
 * `transit_gateway_attachment_id` - (Optional) Transit Gateway Attachment ID to attach to.
@@ -333,7 +358,7 @@ This resource supports the following arguments:
 * `destination_options` - (Optional) Describes the destination options for a flow log. More details below.
 * `tags` - (Optional) Key-value map of resource tags. If configured with a provider [`default_tags` configuration block](https://registry.terraform.io/providers/hashicorp/aws/latest/docs#default_tags-configuration-block) present, tags with matching keys will overwrite those defined at the provider-level.
 
-~> **NOTE:** One of `eni_id`, `subnet_id`, `transit_gateway_id`, `transit_gateway_attachment_id`, or `vpc_id` must be specified.
+~> **NOTE:** One of `eni_id`, `regional_nat_gateway_id`, `subnet_id`, `transit_gateway_id`, `transit_gateway_attachment_id`, or `vpc_id` must be specified.
 
 ### destination_options
 
