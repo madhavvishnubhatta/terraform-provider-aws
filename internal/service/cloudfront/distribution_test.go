@@ -742,6 +742,45 @@ func TestAccCloudFrontDistribution_Origin_originAccessControl(t *testing.T) {
 	})
 }
 
+func TestAccCloudFrontDistribution_Origin_originMtlsConfig(t *testing.T) {
+	ctx := acctest.Context(t)
+	if testing.Short() {
+		t.Skip("skipping long-running test in short mode")
+	}
+
+	var distribution awstypes.Distribution
+	rName := acctest.RandomWithPrefix(t, acctest.ResourcePrefix)
+	resourceName := "aws_cloudfront_distribution.test"
+
+	acctest.ParallelTest(ctx, t, resource.TestCase{
+		PreCheck:                 func() { acctest.PreCheck(ctx, t); acctest.PreCheckPartitionHasService(t, names.CloudFrontEndpointID) },
+		ErrorCheck:               acctest.ErrorCheck(t, names.CloudFrontServiceID),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories,
+		CheckDestroy:             testAccCheckDistributionDestroy(ctx, t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDistributionConfig_originMtlsConfig(t, rName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDistributionExists(ctx, t, resourceName, &distribution),
+					resource.TestCheckResourceAttr(resourceName, "origin.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "origin.0.custom_origin_config.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "origin.0.custom_origin_config.0.origin_mtls_config.#", "1"),
+					resource.TestCheckResourceAttrSet(resourceName, "origin.0.custom_origin_config.0.origin_mtls_config.0.client_certificate_arn"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+				ImportStateVerifyIgnore: []string{
+					"retain_on_delete",
+					"wait_for_deployment",
+				},
+			},
+		},
+	})
+}
+
 // TestAccCloudFrontDistribution_noOptionalItems runs an
 // aws_cloudfront_distribution acceptance test with no optional items set.
 //
@@ -5092,6 +5131,70 @@ resource "aws_cloudfront_distribution" "test" {
   %[2]s
 }
 `, rName, testAccDistributionRetainConfig(), which))
+}
+
+func testAccDistributionConfig_originMtlsConfig(t *testing.T, rName string) string {
+	key := acctest.TLSRSAPrivateKeyPEM(t, 2048)
+	certificate := acctest.TLSRSAX509SelfSignedClientCertificatePEM(t, key, rName+".example.com")
+
+	return acctest.ConfigCompose(testAccRegionProviderConfig(), fmt.Sprintf(`
+resource "aws_acm_certificate" "test" {
+  certificate_body = "%[1]s"
+  private_key      = "%[2]s"
+}
+
+resource "aws_cloudfront_distribution" "test" {
+  enabled          = true
+  retain_on_delete = false
+
+  origin {
+    domain_name = "www.example.com"
+    origin_id   = "test"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+
+      origin_mtls_config {
+        client_certificate_arn = aws_acm_certificate.test.arn
+      }
+    }
+  }
+
+  default_cache_behavior {
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "test"
+    viewer_protocol_policy = "allow-all"
+
+    forwarded_values {
+      query_string = false
+
+      cookies {
+        forward = "none"
+      }
+    }
+
+    min_ttl     = 0
+    default_ttl = 3600
+    max_ttl     = 86400
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+
+  %[3]s
+}
+`, acctest.TLSPEMEscapeNewlines(certificate), acctest.TLSPEMEscapeNewlines(key), testAccDistributionRetainConfig()))
 }
 
 func testAccDistributionConfig_vpcOriginConfig(rName string) string {
