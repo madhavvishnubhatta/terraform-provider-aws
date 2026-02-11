@@ -751,6 +751,8 @@ func TestAccCloudFrontDistribution_Origin_originMtlsConfig(t *testing.T) {
 	var distribution awstypes.Distribution
 	rName := acctest.RandomWithPrefix(t, acctest.ResourcePrefix)
 	resourceName := "aws_cloudfront_distribution.test"
+	certificateResourceName := "aws_acm_certificate.test"
+	certificateResourceName2 := "aws_acm_certificate.test2"
 
 	acctest.ParallelTest(ctx, t, resource.TestCase{
 		PreCheck:                 func() { acctest.PreCheck(ctx, t); acctest.PreCheckPartitionHasService(t, names.CloudFrontEndpointID) },
@@ -759,13 +761,13 @@ func TestAccCloudFrontDistribution_Origin_originMtlsConfig(t *testing.T) {
 		CheckDestroy:             testAccCheckDistributionDestroy(ctx, t),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccDistributionConfig_originMtlsConfig(t, rName),
+				Config: testAccDistributionConfig_originMtlsConfig(t, rName, 0),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckDistributionExists(ctx, t, resourceName, &distribution),
 					resource.TestCheckResourceAttr(resourceName, "origin.#", "1"),
 					resource.TestCheckResourceAttr(resourceName, "origin.0.custom_origin_config.#", "1"),
 					resource.TestCheckResourceAttr(resourceName, "origin.0.custom_origin_config.0.origin_mtls_config.#", "1"),
-					resource.TestCheckResourceAttrSet(resourceName, "origin.0.custom_origin_config.0.origin_mtls_config.0.client_certificate_arn"),
+					resource.TestCheckResourceAttrPair(resourceName, "origin.0.custom_origin_config.0.origin_mtls_config.0.client_certificate_arn", certificateResourceName, names.AttrARN),
 				),
 			},
 			{
@@ -776,6 +778,16 @@ func TestAccCloudFrontDistribution_Origin_originMtlsConfig(t *testing.T) {
 					"retain_on_delete",
 					"wait_for_deployment",
 				},
+			},
+			{
+				Config: testAccDistributionConfig_originMtlsConfig(t, rName, 1),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckDistributionExists(ctx, t, resourceName, &distribution),
+					resource.TestCheckResourceAttr(resourceName, "origin.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "origin.0.custom_origin_config.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "origin.0.custom_origin_config.0.origin_mtls_config.#", "1"),
+					resource.TestCheckResourceAttrPair(resourceName, "origin.0.custom_origin_config.0.origin_mtls_config.0.client_certificate_arn", certificateResourceName2, names.AttrARN),
+				),
 			},
 		},
 	})
@@ -5133,14 +5145,21 @@ resource "aws_cloudfront_distribution" "test" {
 `, rName, testAccDistributionRetainConfig(), which))
 }
 
-func testAccDistributionConfig_originMtlsConfig(t *testing.T, rName string) string {
+func testAccDistributionConfig_originMtlsConfig(t *testing.T, rName string, certIndex int) string {
 	key := acctest.TLSRSAPrivateKeyPEM(t, 2048)
 	certificate := acctest.TLSRSAX509SelfSignedClientCertificatePEM(t, key, rName+".example.com")
+	key2 := acctest.TLSRSAPrivateKeyPEM(t, 2048)
+	certificate2 := acctest.TLSRSAX509SelfSignedClientCertificatePEM(t, key2, rName+"-updated.example.com")
 
 	return acctest.ConfigCompose(testAccRegionProviderConfig(), fmt.Sprintf(`
 resource "aws_acm_certificate" "test" {
   certificate_body = "%[1]s"
   private_key      = "%[2]s"
+}
+
+resource "aws_acm_certificate" "test2" {
+  certificate_body = "%[3]s"
+  private_key      = "%[4]s"
 }
 
 resource "aws_cloudfront_distribution" "test" {
@@ -5158,7 +5177,7 @@ resource "aws_cloudfront_distribution" "test" {
       origin_ssl_protocols   = ["TLSv1.2"]
 
       origin_mtls_config {
-        client_certificate_arn = aws_acm_certificate.test.arn
+        client_certificate_arn = %[6]s
       }
     }
   }
@@ -5192,9 +5211,12 @@ resource "aws_cloudfront_distribution" "test" {
     cloudfront_default_certificate = true
   }
 
-  %[3]s
+  %[5]s
 }
-`, acctest.TLSPEMEscapeNewlines(certificate), acctest.TLSPEMEscapeNewlines(key), testAccDistributionRetainConfig()))
+`, acctest.TLSPEMEscapeNewlines(certificate), acctest.TLSPEMEscapeNewlines(key),
+		acctest.TLSPEMEscapeNewlines(certificate2), acctest.TLSPEMEscapeNewlines(key2),
+		testAccDistributionRetainConfig(),
+		[]string{"aws_acm_certificate.test.arn", "aws_acm_certificate.test2.arn"}[certIndex]))
 }
 
 func testAccDistributionConfig_vpcOriginConfig(rName string) string {
